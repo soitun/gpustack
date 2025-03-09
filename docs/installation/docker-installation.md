@@ -12,6 +12,7 @@ You can use the official Docker image to run GPUStack in a container. Installati
 - [x] AMD GPUs
 - [x] Ascend NPUs
 - [x] Moore Threads GPUs
+- [x] Hygon DCUs
 - [x] CPUs (AVX2 for x86 or NEON for ARM)
 
 ## Prerequisites
@@ -37,6 +38,36 @@ You can use the official Docker image to run GPUStack in a container. Installati
 
 - [NVIDIA Drvier 550+](https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/)
 - [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+
+!!! note
+
+    When systemd is used to manage the cgroups of the container and it is triggered to reload any Unit files that have references to NVIDIA GPUs (e.g. systemctl daemon-reload), containerized GPU workloads may suddenly lose access to their GPUs.
+
+    In GPUStack, GPUs may be lost in the Resources menu, and running `nvidia-smi` inside the GPUStack container may result in the error: `Failed to initialize NVML: Unknown Error`
+
+    To prevent [this issue](https://github.com/NVIDIA/nvidia-container-toolkit/issues/48), disabling systemd cgroup management in Docker is required.
+
+Set the parameter "exec-opts": ["native.cgroupdriver=cgroupfs"] in the `/etc/docker/daemon.json` file and restart docker, such as:
+
+```shell
+sudo vim /etc/docker/daemon.json
+```
+
+```json
+{
+  "runtimes": {
+    "nvidia": {
+      "args": [],
+      "path": "nvidia-container-runtime"
+    }
+  },
+  "exec-opts": ["native.cgroupdriver=cgroupfs"]
+}
+```
+
+```shell
+sudo systemctl daemon-reload && sudo systemctl restart docker
+```
 
 #### Run GPUStack
 
@@ -71,7 +102,6 @@ To retrieve the default admin password, run the following command:
 
 ```shell
 docker exec -it gpustack cat /var/lib/gpustack/initial_admin_password
-
 ```
 
 (**Optional**) Run the following command to start the GPUStack server **without** built-in worker:
@@ -105,7 +135,7 @@ docker run -d --name gpustack-worker \
     --ipc=host \
     -v gpustack-worker-data:/var/lib/gpustack \
     gpustack/gpustack \
-    --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_host_ip
+    --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_worker_host_ip
 ```
 
 ### AMD ROCm
@@ -174,7 +204,7 @@ docker run -d --name gpustack-worker \
     --device /dev/dri \
     -v gpustack-worker-data:/var/lib/gpustack \
     gpustack/gpustack:latest-rocm \
-    --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_host_ip
+    --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_worker_host_ip
 ```
 
 ### Ascend CANN
@@ -238,7 +268,7 @@ docker run -d --name gpustack-worker \
     --ipc=host \
     -v gpustack-worker-data:/var/lib/gpustack \
     gpustack/gpustack:latest-npu \
-    --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_host_ip
+    --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_worker_host_ip
 ```
 
 ### Moore Threads MUSA
@@ -300,7 +330,78 @@ docker run -d --name gpustack-worker \
     --ipc=host \
     -v gpustack-worker-data:/var/lib/gpustack \
     gpustack/gpustack:latest-musa \
-    --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_host_ip
+    --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_worker_host_ip
+```
+
+### Hygon DTK
+
+#### Prerequisites
+
+- [Driver and DTK](https://developer.hpccube.com/tool/#sdk)
+
+Refer to this [Tutorial](../tutorials/running-inference-with-hygon-dcus.md).
+
+#### Run GPUStack
+
+Run the following command to start the GPUStack server **and built-in worker**:
+
+```shell
+docker run -d --name gpustack \
+    --restart=unless-stopped \
+    -p 80:80 \
+    --ipc=host \
+    --group-add=video \
+    --security-opt seccomp=unconfined \
+    --device=/dev/kfd \
+    --device=/dev/dri \
+    -v /opt/hyhal:/opt/hyhal:ro \
+    -v gpustack-data:/var/lib/gpustack \
+    gpustack/gpustack:latest-dcu
+```
+
+To retrieve the default admin password, run the following command:
+
+```shell
+docker exec -it gpustack cat /var/lib/gpustack/initial_admin_password
+
+```
+
+(**Optional**) Run the following command to start the GPUStack server **without** built-in worker:
+
+```shell
+docker run -d --name gpustack-server \
+    --restart=unless-stopped \
+    -p 80:80 \
+    -v gpustack-server-data:/var/lib/gpustack \
+    gpustack/gpustack:latest-cpu \
+    --disable-worker
+```
+
+#### (Optional) Add Worker
+
+To retrieve the token, run the following command on the GPUStack server host:
+
+```shell
+docker exec -it gpustack-server cat /var/lib/gpustack/token
+```
+
+To start a GPUStack worker and **register it with the GPUStack server**, run the following command on the current host or another host. Replace your specific URL, token, and IP address accordingly:
+
+```shell
+docker run -d --name gpustack-worker \
+    --restart=unless-stopped \
+    -p 10150:10150 \
+    -p 40000-41024:40000-41024 \
+    -p 50000-51024:50000-51024 \
+    --ipc=host \
+    --group-add=video \
+    --security-opt seccomp=unconfined \
+    --device /dev/kfd \
+    --device /dev/dri \
+    -v /opt/hyhal:/opt/hyhal:ro \
+    -v gpustack-worker-data:/var/lib/gpustack \
+    gpustack/gpustack:latest-dcu \
+    --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_worker_host_ip
 ```
 
 ## Build Your Own Docker Image

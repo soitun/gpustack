@@ -9,9 +9,14 @@ Install Python version 3.10 to 3.12.
 Run the following to install GPUStack:
 
 ```shell
-# You can add extra dependencies, options are "vllm", "audio" and "all".
-# e.g., gpustack[all]
 pip install gpustack
+```
+
+You can add extra dependencies, options are "vllm", "audio" and "all", such as:
+
+```shell
+# vllm is currently only available for Linux on AMD64
+pip install gpustack[all]
 ```
 
 To verify, run:
@@ -21,6 +26,8 @@ gpustack version
 ```
 
 ## Run GPUStack
+
+### Run Server
 
 Run the following command to start the GPUStack server:
 
@@ -32,6 +39,22 @@ By default, GPUStack uses `/var/lib/gpustack` as the data directory so you need 
 
 ```
 gpustack start --data-dir mypath
+```
+
+### (Optional) Add Worker
+
+To add a worker to the GPUStack cluster, you need to specify the server URL and the authentication token.
+
+To retrieve the token, run the following command on the GPUStack server host:
+
+```shell
+cat /var/lib/gpustack/token
+```
+
+To start a GPUStack worker and **register it with the GPUStack server**, run the following command on the worker host. Replace your specific URL, token, and IP address accordingly:
+
+```shell
+gpustack start --server-url http://your_gpustack_url --token your_gpustack_token --worker-ip your_worker_host_ip
 ```
 
 ### Run GPUStack as a System Service
