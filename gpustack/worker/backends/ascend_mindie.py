@@ -887,23 +887,29 @@ class AscendMindIEServer(InferenceServer):
         # -- Pin installation path, which helps to locate other resources.
         env["MIES_INSTALL_PATH"] = str(install_path)
         # -- Enable exposing metircs.
-        env["MIES_SERVICE_MONITOR_MODE"] = "1"
+        env["MIES_SERVICE_MONITOR_MODE"] = env.pop("MIES_SERVICE_MONITOR_MODE", "1")
         # -- Enable high performance swapper.
-        env["MIES_RECOMPUTE_THRESHOLD"] = "0.5"
+        env["MIES_RECOMPUTE_THRESHOLD"] = env.pop("MIES_RECOMPUTE_THRESHOLD", "0.5")
         # env["MINDIE_LLM_USE_MB_SWAPPER"] = "1"  # Atlas 300I Duo needs to unset this.
-        env["MINDIE_LLM_RECOMPUTE_THRESHOLD"] = "0.5"
+        env["MINDIE_LLM_RECOMPUTE_THRESHOLD"] = env.pop(
+            "MINDIE_LLM_RECOMPUTE_THRESHOLD", "0.5"
+        )
         # -- Enforce continues batching.
-        env["MINDIE_LLM_CONTINUOUS_BATCHING"] = "1"
+        env["MINDIE_LLM_CONTINUOUS_BATCHING"] = env.pop(
+            "MINDIE_LLM_CONTINUOUS_BATCHING", "1"
+        )
         # -- Disable checking files permission.
         env["MINDIE_CHECK_INPUTFILES_PERMISSION"] = "0"
         # -- Enforce using ATB as backend
         env["MINDIE_LLM_FRAMEWORK_BACKEND"] = "ATB"
-        # -- Enforce using 80% of GPU memory
+        # -- Enforce using 80% of GPU memory.
         env["NPU_MEMORY_FRACTION"] = "0.8"
         # -- Disable OpenMP parallelism, speed up model loading.
         env["OMP_NUM_THREADS"] = env.pop("OMP_NUM_THREADS", "1")
         # -- Improve performance.
-        env["MINDIE_ASYNC_SCHEDULING_ENABLE"] = "1"
+        env["MINDIE_ASYNC_SCHEDULING_ENABLE"] = env.pop(
+            "MINDIE_ASYNC_SCHEDULING_ENABLE", "1"
+        )
         env["TASK_QUEUE_ENABLE"] = env.pop("TASK_QUEUE_ENABLE", "2")
         env["ATB_OPERATION_EXECUTE_ASYNC"] = "1"
         env["ATB_LAYER_INTERNAL_TENSOR_REUSE"] = env.pop(
@@ -911,7 +917,7 @@ class AscendMindIEServer(InferenceServer):
         )
         env["INF_NAN_MODE_ENABLE"] = env.pop("INF_NAN_MODE_ENABLE", "0")
         env["ATB_LLM_ENABLE_AUTO_TRANSPOSE"] = env.pop(
-            "ATB_LLM_ENABLE_AUTO_TRANSPOSE", "0"
+            "ATB_LLM_ENABLE_AUTO_TRANSPOSE", "1"
         )
         env["ATB_CONVERT_NCHW_TO_ND"] = env.pop("ATB_CONVERT_NCHW_TO_ND", "1")
         env["ATB_WORKSPACE_MEM_ALLOC_ALG_TYPE"] = env.pop(
@@ -951,11 +957,7 @@ class AscendMindIEServer(InferenceServer):
 
         # - Device config
         backend_config["interNodeTLSEnabled"] = False
-        backend_config["npuDeviceIds"] = [
-            # Since we can reassemble the IDs of all visible devices through runtime,
-            # we can simply provide the count ID.
-            list(range(len(self._model_instance.gpu_indexes)))
-        ]
+        backend_config["npuDeviceIds"] = [self._model_instance.gpu_indexes]
         model_config["worldSize"] = len(self._model_instance.gpu_indexes)
         backend_config["multiNodesInferEnabled"] = False
         if is_distributed:
@@ -969,19 +971,11 @@ class AscendMindIEServer(InferenceServer):
             backend_config["multiNodesInferPort"] = connecting_port
         if is_distributed_follower:
             subworker = next(
-                (
-                    sw
-                    for sw in subworkers
-                    if sw.worker_id == self._model_instance.worker_id
-                ),
+                (sw for sw in subworkers if sw.worker_id == self._worker.id),
                 None,
             )
             # Override device config if is a subordinate worker.
-            backend_config["npuDeviceIds"] = [
-                # Since we can reassemble the IDs of all visible devices through runtime,
-                # we can simply provide the count ID.
-                list(range(len(subworker.gpu_indexes)))
-            ]
+            backend_config["npuDeviceIds"] = [subworker.gpu_indexes]
             model_config["worldSize"] = len(subworker.gpu_indexes)
 
         # - Model config
@@ -1337,7 +1331,7 @@ class AscendMindIEServer(InferenceServer):
         if not image:
             raise ValueError("Failed to get Ascend MindIE backend image")
 
-        resources = self._get_configured_resources()
+        resources = self._get_configured_resources(mount_all_devices=True)
 
         mounts = self._get_configured_mounts()
 
